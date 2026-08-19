@@ -51,6 +51,26 @@ return [
         'resolver' => Shopper\Http\Zone\DefaultZoneResolver::class,
         'header' => 'X-Shopper-Zone',
         'default_code' => env('SHOPPER_API_DEFAULT_ZONE'),
+        'cache_ttl' => 60,
+    ],
+
+    /*
+    |--------------------------------------------------------------------------
+    | Channel resolution
+    |--------------------------------------------------------------------------
+    |
+    | The sales channel is a soft catalog context, never a hard gate. Channels
+    | are matched by their unique "slug". The resolver is swappable: provide
+    | your own implementation to resolve a channel from a domain, an API key,
+    | or any custom strategy. When nothing resolves, the request proceeds with
+    | a null channel and the catalog stays unfiltered.
+    |
+    */
+    'channel' => [
+        'resolver' => Shopper\Http\Channel\DefaultChannelResolver::class,
+        'header' => 'X-Shopper-Channel',
+        'default_slug' => env('SHOPPER_API_DEFAULT_CHANNEL'),
+        'cache_ttl' => 60,
     ],
 
     /*

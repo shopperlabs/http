@@ -9,12 +9,18 @@ use Illuminate\Contracts\Debug\ExceptionHandler;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Routing\Router;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\RateLimiter;
+use Shopper\Core\Models\Channel;
+use Shopper\Core\Models\Zone;
+use Shopper\Http\Channel\DefaultChannelResolver;
+use Shopper\Http\Contracts\ChannelResolver;
 use Shopper\Http\Contracts\ZoneResolver;
 use Shopper\Http\Enum\RateLimit;
 use Shopper\Http\Exceptions\JsonApiErrorRenderer;
 use Shopper\Http\Middleware\EnsureJsonApiResponse;
 use Shopper\Http\Middleware\NegotiateLocale;
+use Shopper\Http\Middleware\ResolveChannel;
 use Shopper\Http\Middleware\ResolveCustomer;
 use Shopper\Http\Middleware\ResolveZone;
 use Shopper\Http\Zone\DefaultZoneResolver;
@@ -38,6 +44,11 @@ final class HttpServiceProvider extends PackageServiceProvider
             fn ($app): ZoneResolver => $app->make((string) config('shopper.http.zone.resolver', DefaultZoneResolver::class)),
         );
 
+        $this->app->bind(
+            ChannelResolver::class,
+            fn ($app): ChannelResolver => $app->make((string) config('shopper.http.channel.resolver', DefaultChannelResolver::class)),
+        );
+
         $this->app->singleton(ShopperApiRouter::class);
     }
 
@@ -51,6 +62,36 @@ final class HttpServiceProvider extends PackageServiceProvider
         $this->registerRateLimiters();
         $this->registerMiddleware();
         $this->registerExceptionRenderer();
+        $this->registerZoneCacheInvalidation();
+        $this->registerChannelCacheInvalidation();
+    }
+
+    private function registerChannelCacheInvalidation(): void
+    {
+        $forget = static function (Channel $channel): void {
+            Cache::forget(DefaultChannelResolver::cacheKey((string) $channel->slug));
+
+            if ($channel->wasChanged('slug')) {
+                Cache::forget(DefaultChannelResolver::cacheKey((string) $channel->getOriginal('slug')));
+            }
+        };
+
+        Channel::saved($forget);
+        Channel::deleted($forget);
+    }
+
+    private function registerZoneCacheInvalidation(): void
+    {
+        $forget = static function (Zone $zone): void {
+            Cache::forget(DefaultZoneResolver::cacheKey((string) $zone->code));
+
+            if ($zone->wasChanged('code')) {
+                Cache::forget(DefaultZoneResolver::cacheKey((string) $zone->getOriginal('code')));
+            }
+        };
+
+        Zone::saved($forget);
+        Zone::deleted($forget);
     }
 
     private function registerExceptionRenderer(): void
@@ -96,6 +137,7 @@ final class HttpServiceProvider extends PackageServiceProvider
             EnsureJsonApiResponse::class,
             NegotiateLocale::class,
             ResolveZone::class,
+            ResolveChannel::class,
         ], (array) config('shopper.http.middleware.store', [])));
 
         $router->middlewareGroup('shopper:store-auth', array_merge([
@@ -103,6 +145,7 @@ final class HttpServiceProvider extends PackageServiceProvider
             EnsureJsonApiResponse::class,
             NegotiateLocale::class,
             ResolveZone::class,
+            ResolveChannel::class,
             'auth:sanctum',
             ResolveCustomer::class,
         ], (array) config('shopper.http.middleware.authenticated', [])));
